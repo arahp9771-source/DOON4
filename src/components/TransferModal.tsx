@@ -27,8 +27,10 @@ export default function TransferModal({ onClose, onComplete }: { onClose: () => 
       if (balances.online < totalDeduction) { setLoading(false); return; }
       await updateBalances(balances.offline + amt, balances.online - totalDeduction);
     }
+    // FIX: Tentukan source berdasarkan arah transfer (bukan 'transfer')
+    const feeSource = direction === 'offline_to_online' ? 'offline' : 'online';
     if (fee > 0) {
-      await addTransaction({ type: 'transfer_fee', category: 'Lainnya', description: '', amount: fee, timestamp: Date.now(), source: 'transfer' });
+      await addTransaction({ type: 'transfer_fee', category: 'Lainnya', description: '', amount: fee, timestamp: Date.now(), source: feeSource });
     }
     setLoading(false);
     onComplete();
@@ -106,7 +108,7 @@ export default function TransferModal({ onClose, onComplete }: { onClose: () => 
             className="mt-5 w-full py-3 rounded-lg font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
             style={{ background: `linear-gradient(to right, ${colors.accent}, ${colors.accentSecondary})`, color: colors.bg }}
           >
-            <motion.div className="absolute inset-0" style={{ background: 'rgba(255,255,255,0.15)' }} animate={{ x: ['-100%', '200%'] }} transition={{ duration: 2, repeat: Infinity, ease: 'linear', repeatDelay: 1 }} />
+            <motion.div className="absolute inset-0" style={{ background: 'rgba(255,255,255,0.15)' }} animate={{ x: ['-100%', '200%'] }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }} />
             <span className="relative z-10">{loading ? 'Memproses...' : 'Pindah Saldo'}</span>
           </motion.button>
         </div>

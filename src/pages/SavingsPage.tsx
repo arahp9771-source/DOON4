@@ -50,6 +50,7 @@ export default function SavingsPage() {
     const newDarurat = type === 'darurat' ? savings.darurat + amount : savings.darurat;
     await updateSavings(newInvestasi, newDarurat);
     await addSavingsHistory(type, amount);
+    // FIX: Gunakan consistent category names yang sesuai dengan ALL_CATEGORIES
     await addTransaction({ type: 'expense', category: `Tabungan ${type === 'investasi' ? 'Investasi' : 'Darurat'}`, description: '', amount, timestamp: Date.now(), source });
     setShowAddSavings(false);
     setShakeBell(false);
@@ -69,13 +70,14 @@ export default function SavingsPage() {
 
     if (method === 'direct') {
       // Tarik langsung - just record as withdraw_direct
+      // FIX: Gunakan valid source bukan 'transfer'
       await addTransaction({
         type: 'withdraw_direct',
         category: `Tarik ${type === 'investasi' ? 'Investasi' : 'Darurat'}`,
         description: `Tarik langsung dari tabungan ${type}`,
         amount,
         timestamp: Date.now(),
-        source: 'transfer',
+        source: 'online', // Default ke online karena ini adalah penarikan
         withdrawFrom: type,
       });
     } else {
@@ -83,13 +85,14 @@ export default function SavingsPage() {
       const newOnline = balances.online + amount;
       await updateBalances(balances.offline, newOnline);
       
+      // FIX: Gunakan valid source bukan 'transfer'
       await addTransaction({
         type: 'withdraw_to_balance',
         category: `Tarik ${type === 'investasi' ? 'Investasi' : 'Darurat'}`,
         description: `Tarik ke saldo dari tabungan ${type}`,
         amount,
         timestamp: Date.now(),
-        source: 'transfer',
+        source: 'online', // Default ke online karena masuk ke online balance
         withdrawFrom: type,
       });
     }

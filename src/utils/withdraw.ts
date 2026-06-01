@@ -1,5 +1,5 @@
 import { getTransactions, getSavingsHistory, addSavingsHistory, type Transaction } from '../db';
-import { formatDate } from './format';
+import { getDateKey } from './format';
 
 /**
  * LIFO Logic untuk Calculate Adjusted Savings saat Withdraw
@@ -61,7 +61,7 @@ export function getExpenseCategoryForWithdraw(type: 'investasi' | 'darurat'): st
 /**
  * Get affected transactions yang perlu di-adjust
  * Digunakan untuk menghitung burn rate & total pengeluaran yang benar
- * Format date sebagai YYYY-MM-DD untuk matching dengan adjustments
+ * Menggunakan getDateKey untuk consistent date formatting (YYYY-MM-DD)
  */
 export async function getAffectedTransactions(
   type: 'investasi' | 'darurat',
@@ -72,12 +72,8 @@ export async function getAffectedTransactions(
   const category = getExpenseCategoryForWithdraw(type);
 
   return allTransactions.filter((tx) => {
-    // Format date sebagai YYYY-MM-DD
-    const txDate = new Date(tx.timestamp).toLocaleDateString('id-ID', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit' 
-    }).split('/').reverse().join('-');
+    // Gunakan getDateKey untuk consistent date formatting
+    const txDate = getDateKey(tx.timestamp);
     
     return affectedDates.includes(txDate) && 
            tx.category === category && 
@@ -101,7 +97,7 @@ export async function calculateTotalExpenseReduction(
 
 /**
  * Get all withdraw_to_balance transactions untuk audit/calculation
- * Format date sebagai YYYY-MM-DD
+ * Menggunakan getDateKey untuk consistent date formatting (YYYY-MM-DD)
  */
 export async function getWithdrawToBalanceTransactions(): Promise<Array<{
   date: string;
@@ -113,11 +109,7 @@ export async function getWithdrawToBalanceTransactions(): Promise<Array<{
   return allTransactions
     .filter((tx) => tx.type === 'withdraw_to_balance')
     .map((tx) => ({
-      date: new Date(tx.timestamp).toLocaleDateString('id-ID', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).split('/').reverse().join('-'),
+      date: getDateKey(tx.timestamp),
       type: (tx.withdrawFrom || 'investasi') as 'investasi' | 'darurat',
       amount: tx.amount,
     }));

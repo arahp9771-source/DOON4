@@ -11,7 +11,11 @@ export default function JackpotTicker({ value, className = '', style }: { value:
   useEffect(() => {
     const start = prevValue.current;
     const end = value;
-    if (start !== end) setIsAnimating(true);
+    
+    // Jangan animasi jika nilai sama
+    if (start === end) return;
+    
+    setIsAnimating(true);
     const duration = 1200;
     const startTime = performance.now();
 
@@ -19,10 +23,16 @@ export default function JackpotTicker({ value, className = '', style }: { value:
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplay(Math.round(start + (end - start) * eased));
+      
+      // FIX: Gunakan end value jika sudah selesai animasi
+      const displayValue = progress >= 1 ? end : Math.round(start + (end - start) * eased);
+      setDisplay(displayValue);
+      
       if (progress < 1) {
         animRef.current = requestAnimationFrame(animate);
       } else {
+        // Pastikan final value benar
+        setDisplay(end);
         setIsAnimating(false);
       }
     };

@@ -18,6 +18,15 @@ export function formatDateTime(ts: number): string {
   return `${formatDate(ts)} ${formatTime(ts)}`;
 }
 
+/**
+ * Get ISO date string (YYYY-MM-DD) untuk consistent date handling
+ * Ini penting untuk matching transactions dengan withdrawals
+ */
+export function getDateKey(timestamp: number): string {
+  return new Date(timestamp).toISOString().split('T')[0];
+}
+
 export const EXPENSE_CATEGORIES_HARIAN = ['Makanan', 'Hiburan', 'Kuliah'] as const;
 export const EXPENSE_CATEGORIES_KHUSUS = ['Keperluan Rumah', 'Internet/Pulsa', 'Kuliah', 'Hiburan', 'Motor', 'Style', 'Lainnya'] as const;
-export const ALL_CATEGORIES = [...EXPENSE_CATEGORIES_HARIAN, ...EXPENSE_CATEGORIES_KHUSUS] as const;
+export const SAVINGS_CATEGORIES = ['Tabungan Investasi', 'Tabungan Darurat'] as const;
+export const ALL_CATEGORIES = [...EXPENSE_CATEGORIES_HARIAN, ...EXPENSE_CATEGORIES_KHUSUS, ...SAVINGS_CATEGORIES] as const;

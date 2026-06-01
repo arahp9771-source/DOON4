@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, 
 import { getTransactions, type Transaction } from '../db';
 import { useTheme } from '../components/ThemeEngine';
 import StaggeredEntrance from '../components/StaggeredEntrance';
-import { formatRupiah } from '../utils/format';
+import { formatRupiah, getDateKey } from '../utils/format';
 import { getWithdrawToBalanceTransactions } from '../utils/withdraw';
 
 const COLORS = ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
@@ -48,13 +48,9 @@ export default function AnalyticsPage() {
   });
 
   // Apply withdraw-to-balance reductions
+  // FIX: Gunakan getDateKey untuk consistent date formatting
   const adjustedExpenses = expenses.map((tx) => {
-    const txDate = new Date(tx.timestamp).toLocaleDateString('id-ID', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit' 
-    }).split('/').reverse().join('-');
-    
+    const txDate = getDateKey(tx.timestamp);
     const withdrawData = withdrawToBalanceMap[txDate];
     if (!withdrawData) return tx;
     
@@ -98,11 +94,8 @@ export default function AnalyticsPage() {
     const dateStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     const dayEnd = dayStart + 86400000;
-    const txDate = new Date(d).toLocaleDateString('id-ID', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit' 
-    }).split('/').reverse().join('-');
+    // FIX: Gunakan getDateKey untuk consistent date formatting
+    const txDate = getDateKey(d.getTime());
     
     // Count actual savings transactions
     let daySavings = transactions
@@ -247,7 +240,7 @@ export default function AnalyticsPage() {
                     transition={{ delay: 0.05 * i }}
                     whileHover={{ x: 3 }}
                   >
-                    <motion.span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }} animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 2, repeat: Infinity }} />
+                    <motion.span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }} animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 2, repeat: Infinity, repeatDelay: 0.5 }} />
                     <span className="truncate flex-1" style={{ color: colors.textSecondary }}>{d.name}</span>
                     <span style={{ color: colors.textSecondary }}>{formatRupiah(d.value)}</span>
                   </motion.div>
