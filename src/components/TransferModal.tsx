@@ -4,6 +4,8 @@ import { X, ArrowRight } from 'lucide-react';
 import { getBalances, updateBalances, addTransaction } from '../db';
 import { useTheme } from './ThemeEngine';
 import { formatRupiah } from '../utils/format';
+import { toSafeInt, isValidAmount } from '../utils/number';
+import { logTransaction } from '../utils/logging';
 
 export default function TransferModal({ onClose, onComplete }: { onClose: () => void; onComplete: () => void }) {
   const { colors } = useTheme();
@@ -12,31 +14,78 @@ export default function TransferModal({ onClose, onComplete }: { onClose: () => 
   const [adminFee, setAdminFee] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleAmountChange = (value: string, setter: (v: string) => void) => {
+    if (value === '' || /^\d+$/.test(value)) {
+      setter(value);
+    }
+  };
+
   const handleTransfer = async () => {
-    const amt = Number(amount) || 0;
-    const fee = Number(adminFee) || 0;
-    if (amt <= 0) return;
+    const safeAmount = toSafeInt(amount);
+    const safeFee = toSafeInt(adminFee);
+    if (!isValidAmount(safeAmount)) return;
+    
     setLoading(true);
     const balances = await getBalances();
     if (!balances) { setLoading(false); return; }
-    const totalDeduction = amt + fee;
+    
+    const totalDeduction = safeAmount + safeFee;
+    
+    logTransaction('TRANSFER_INIT', {
+      direction,
+      amount: safeAmount,
+      fee: safeFee,
+      totalDeduction,
+      balanceBefore: { offline: balances.offline, online: balances.online },
+    });
+    
     if (direction === 'offline_to_online') {
-      if (balances.offline < totalDeduction) { setLoading(false); return; }
-      await updateBalances(balances.offline - totalDeduction, balances.online + amt);
+      if (balances.offline < totalDeduction) { 
+        logTransaction('TRANSFER_FAIL', { reason: 'Insufficient offline balance', required: totalDeduction, available: balances.offline });
+        setLoading(false); 
+        return; 
+      }
+      await updateBalances(balances.offline - totalDeduction, balances.online + safeAmount);
     } else {
-      if (balances.online < totalDeduction) { setLoading(false); return; }
-      await updateBalances(balances.offline + amt, balances.online - totalDeduction);
+      if (balances.online < totalDeduction) { 
+        logTransaction('TRANSFER_FAIL', { reason: 'Insufficient online balance', required: totalDeduction, available: balances.online });
+        setLoading(false); 
+        return; 
+      }
+      await updateBalances(balances.offline + safeAmount, balances.online - totalDeduction);
     }
-    // FIX: Tentukan source berdasarkan arah transfer (bukan 'transfer')
+    
     const feeSource = direction === 'offline_to_online' ? 'offline' : 'online';
-    if (fee > 0) {
-      await addTransaction({ type: 'transfer_fee', category: 'Lainnya', description: '', amount: fee, timestamp: Date.now(), source: feeSource });
+    if (safeFee > 0) {
+      await addTransaction({ 
+        type: 'transfer_fee', 
+        category: 'Lainnya', 
+        description: '', 
+        amount: safeFee, 
+        timestamp: Date.now(), 
+        source: feeSource 
+      });
+      logTransaction('TRANSFER_FEE_RECORDED', { amount: safeFee, source: feeSource });
     }
+    
+    // FIX: Catat main transfer juga sebagai transaction untuk tracking
+    await addTransaction({
+      type: 'expense',
+      category: `Transfer: ${direction === 'offline_to_online' ? 'Tunai→Online' : 'Online→Tunai'}`,
+      description: '',
+      amount: safeAmount,
+      timestamp: Date.now(),
+      source: feeSource,
+    });
+    
+    logTransaction('TRANSFER_COMPLETE', { amount: safeAmount, fee: safeFee, direction });
     setLoading(false);
     onComplete();
     onClose();
   };
 
+  const safeAmount = toSafeInt(amount);
+  const safeFee = toSafeInt(adminFee);
   const sourceLabel = direction === 'offline_to_online' ? 'Tunai (Offline)' : 'E-Wallet (Online)';
   const destLabel = direction === 'offline_to_online' ? 'E-Wallet (Online)' : 'Tunai (Offline)';
 
@@ -73,38 +122,50 @@ export default function TransferModal({ onClose, onComplete }: { onClose: () => 
           </motion.div>
           <div className="space-y-3">
             <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-              <label className="block text-sm mb-1" style={{ color: colors.textSecondary }}>Jumlah Transfer</label>
+              <label className="block text-sm mb-1" style={{ color: colors.textSecondary }}>Jumlah Transfer (Integer)</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: colors.textMuted }}>Rp</span>
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0"
+                <input 
+                  type="text" 
+                  inputMode="numeric"
+                  value={amount} 
+                  onChange={(e) => handleAmountChange(e.target.value, setAmount)} 
+                  placeholder="0"
                   className="w-full rounded-lg pl-10 pr-4 py-3 text-sm border focus:outline-none transition-colors"
                   style={{ background: colors.inputBg, color: colors.text, borderColor: colors.borderSubtle }}
                 />
               </div>
+              {amount && <p className="text-xs mt-1" style={{ color: colors.textMuted }}>Nilai: {formatRupiah(safeAmount)}</p>}
             </motion.div>
             <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.25 }}>
-              <label className="block text-sm mb-1" style={{ color: colors.textSecondary }}>Biaya Admin</label>
+              <label className="block text-sm mb-1" style={{ color: colors.textSecondary }}>Biaya Admin (Integer)</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: colors.textMuted }}>Rp</span>
-                <input type="number" value={adminFee} onChange={(e) => setAdminFee(e.target.value)} placeholder="0"
+                <input 
+                  type="text" 
+                  inputMode="numeric"
+                  value={adminFee} 
+                  onChange={(e) => handleAmountChange(e.target.value, setAdminFee)} 
+                  placeholder="0"
                   className="w-full rounded-lg pl-10 pr-4 py-3 text-sm border focus:outline-none transition-colors"
                   style={{ background: colors.inputBg, color: colors.text, borderColor: colors.borderSubtle }}
                 />
               </div>
+              {adminFee && <p className="text-xs mt-1" style={{ color: colors.textMuted }}>Nilai: {formatRupiah(safeFee)}</p>}
             </motion.div>
           </div>
-          {Number(amount) > 0 && (
+          {safeAmount > 0 && (
             <motion.div className="mt-3 p-3 rounded-lg text-sm" style={{ background: colors.inputBg }} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
               <div className="flex justify-between">
                 <span style={{ color: colors.textSecondary }}>Total dipotong dari {sourceLabel}</span>
-                <span style={{ color: colors.text }}>{formatRupiah((Number(amount) || 0) + (Number(adminFee) || 0))}</span>
+                <span style={{ color: colors.text, fontWeight: 600 }}>{formatRupiah(safeAmount + safeFee)}</span>
               </div>
             </motion.div>
           )}
           <motion.button
             onClick={handleTransfer}
-            disabled={loading || (Number(amount) || 0) <= 0}
-            whileTap={!loading && (Number(amount) || 0) > 0 ? { scale: 0.95 } : undefined}
+            disabled={loading || !isValidAmount(safeAmount)}
+            whileTap={!loading && isValidAmount(safeAmount) ? { scale: 0.95 } : undefined}
             className="mt-5 w-full py-3 rounded-lg font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
             style={{ background: `linear-gradient(to right, ${colors.accent}, ${colors.accentSecondary})`, color: colors.bg }}
           >

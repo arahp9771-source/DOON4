@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { X, ArrowDown, Plus } from 'lucide-react';
 import { useTheme } from './ThemeEngine';
 import { formatRupiah } from '../utils/format';
 import { calculateAdjustedSavings, getAffectedDays } from '../utils/withdraw';
+import { toSafeInt, isValidAmount } from '../utils/number';
+import { logTransaction } from '../utils/logging';
 
 interface WithdrawModalProps {
   savingsAmount: number;
@@ -19,21 +21,48 @@ export default function WithdrawModal({ savingsAmount, savingsType, onWithdraw, 
   const [affectedDays, setAffectedDays] = useState<Array<{ date: string; amount: number }>>([]);
   const [showPreview, setShowPreview] = useState(false);
 
-  useEffect(() => {
-    const updatePreview = async () => {
-      const withdrawAmount = Number(amount) || 0;
-      if (withdrawAmount > 0) {
-        const { adjustments } = await calculateAdjustedSavings(savingsType, withdrawAmount);
-        const days = getAffectedDays(adjustments);
-        setAffectedDays(days);
-      } else {
-        setAffectedDays([]);
-      }
-    };
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target.value;
+    // Hanya terima integer positif
+    if (input === '' || /^\d+$/.test(input)) {
+      setAmount(input);
+    }
+  };
+
+  const handleWithdrawClick = async () => {
+    const safeAmount = toSafeInt(amount);
+    if (!isValidAmount(safeAmount)) return;
+    
+    logTransaction('WITHDRAW_INIT', {
+      type: savingsType,
+      method,
+      amount: safeAmount,
+      savingsAmount,
+    });
+    
+    onWithdraw(safeAmount, method);
+    onClose();
+  };
+
+  // Update preview saat amount berubah
+  const updatePreview = async () => {
+    const safeAmount = toSafeInt(amount);
+    if (safeAmount > 0) {
+      const { adjustments } = await calculateAdjustedSavings(savingsType, safeAmount);
+      const days = getAffectedDays(adjustments);
+      setAffectedDays(days);
+    } else {
+      setAffectedDays([]);
+    }
+  };
+
+  // Trigger preview update
+  React.useEffect(() => {
     updatePreview();
   }, [amount, savingsType]);
 
-  const isValid = Number(amount) > 0 && Number(amount) <= savingsAmount;
+  const safeAmount = toSafeInt(amount);
+  const isValid = safeAmount > 0 && safeAmount <= savingsAmount;
   const minAmount = savingsType === 'investasi' ? 10000 : 5000;
 
   return (
@@ -137,16 +166,17 @@ export default function WithdrawModal({ savingsAmount, savingsType, onWithdraw, 
           {/* Amount Input */}
           <div className="mb-4">
             <p className="text-xs font-semibold mb-2" style={{ color: colors.textMuted }}>
-              JUMLAH TARIK
+              JUMLAH TARIK (Integer)
             </p>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: colors.textMuted }}>
                 Rp
               </span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={handleAmountChange}
                 placeholder="0"
                 className="w-full rounded-xl pl-10 pr-4 py-3 text-sm border focus:outline-none transition-colors"
                 style={{
@@ -156,7 +186,12 @@ export default function WithdrawModal({ savingsAmount, savingsType, onWithdraw, 
                 }}
               />
             </div>
-            {Number(amount) > savingsAmount && (
+            {amount && (
+              <div className="mt-2 text-xs" style={{ color: colors.textMuted }}>
+                <p>Nilai masuk: {formatRupiah(toSafeInt(amount))}</p>
+              </div>
+            )}
+            {safeAmount > savingsAmount && (
               <p className="text-xs mt-2" style={{ color: '#f43f5e' }}>
                 ⚠️ Melebihi saldo tersedia
               </p>
@@ -164,67 +199,63 @@ export default function WithdrawModal({ savingsAmount, savingsType, onWithdraw, 
           </div>
 
           {/* LIFO Preview */}
-          <AnimatePresence>
-            {affectedDays.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-4 rounded-xl p-3 border overflow-hidden"
-                style={{ background: `${colors.accent}08`, borderColor: `${colors.accent}33` }}
+          {affectedDays.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-4 rounded-xl p-3 border overflow-hidden"
+              style={{ background: `${colors.accent}08`, borderColor: `${colors.accent}33` }}
+            >
+              <button
+                onClick={() => setShowPreview(!showPreview)}
+                className="w-full flex items-center justify-between text-xs font-semibold"
+                style={{ color: colors.accent }}
               >
-                <button
-                  onClick={() => setShowPreview(!showPreview)}
-                  className="w-full flex items-center justify-between text-xs font-semibold"
-                  style={{ color: colors.accent }}
-                >
-                  <span>Preview Adjustment LIFO</span>
-                  <motion.span animate={{ rotate: showPreview ? 180 : 0 }}>
-                    ↓
-                  </motion.span>
-                </button>
+                <span>Preview Adjustment LIFO</span>
+                <motion.span animate={{ rotate: showPreview ? 180 : 0 }}>
+                  ↓
+                </motion.span>
+              </button>
 
-                <AnimatePresence>
-                  {showPreview && (
+              {showPreview && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-3 space-y-2 text-xs"
+                >
+                  {affectedDays.map((day, i) => (
                     <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="mt-3 space-y-2 text-xs"
+                      key={day.date}
+                      className="flex items-center justify-between p-2 rounded-lg"
+                      style={{ background: colors.inputBg }}
+                      initial={{ x: -10, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: i * 0.05 }}
                     >
-                      {affectedDays.map((day, i) => (
-                        <motion.div
-                          key={day.date}
-                          className="flex items-center justify-between p-2 rounded-lg"
-                          style={{ background: colors.inputBg }}
-                          initial={{ x: -10, opacity: 0 }}
-                          animate={{ x: 0, opacity: 1 }}
-                          transition={{ delay: i * 0.05 }}
-                        >
-                          <span style={{ color: colors.textMuted }}>{day.date}</span>
-                          <span style={{ color: colors.text, fontWeight: 600 }}>
-                            -{formatRupiah(day.amount)}
-                          </span>
-                        </motion.div>
-                      ))}
-                      <motion.div
-                        className="flex items-center justify-between p-2 rounded-lg border-t mt-3 pt-3"
-                        style={{ borderColor: colors.borderSubtle }}
-                        initial={{ x: -10, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        transition={{ delay: affectedDays.length * 0.05 }}
-                      >
-                        <span style={{ color: colors.textMuted }}>Total Adjustment</span>
-                        <span style={{ color: colors.accent, fontWeight: 700 }}>
-                          -{formatRupiah(affectedDays.reduce((sum, d) => sum + d.amount, 0))}
-                        </span>
-                      </motion.div>
+                      <span style={{ color: colors.textMuted }}>{day.date}</span>
+                      <span style={{ color: colors.text, fontWeight: 600 }}>
+                        -{formatRupiah(day.amount)}
+                      </span>
                     </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  ))}
+                  <motion.div
+                    className="flex items-center justify-between p-2 rounded-lg border-t mt-3 pt-3"
+                    style={{ borderColor: colors.borderSubtle }}
+                    initial={{ x: -10, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: affectedDays.length * 0.05 }}
+                  >
+                    <span style={{ color: colors.textMuted }}>Total Adjustment</span>
+                    <span style={{ color: colors.accent, fontWeight: 700 }}>
+                      -{formatRupiah(affectedDays.reduce((sum, d) => sum + d.amount, 0))}
+                    </span>
+                  </motion.div>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
 
           {/* Info Box */}
           {method === 'to_balance' && affectedDays.length > 0 && (
@@ -257,12 +288,7 @@ export default function WithdrawModal({ savingsAmount, savingsType, onWithdraw, 
               Batal
             </motion.button>
             <motion.button
-              onClick={() => {
-                if (isValid) {
-                  onWithdraw(Number(amount), method);
-                  onClose();
-                }
-              }}
+              onClick={handleWithdrawClick}
               disabled={!isValid}
               whileTap={isValid ? { scale: 0.95 } : undefined}
               className="flex-1 py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -274,7 +300,7 @@ export default function WithdrawModal({ savingsAmount, savingsType, onWithdraw, 
               }}
             >
               <ArrowDown size={16} />
-              {method === 'direct' ? 'Tarik Langsung' : 'Tambah ke Saldo'}
+              {method === 'direct' ? 'Tarik Langsung' : 'Tambah ke Saldo'} {amount && `(${formatRupiah(toSafeInt(amount))})`}
             </motion.button>
           </div>
         </div>
